@@ -2,7 +2,7 @@ import copy
 import numpy as np
 from scipy.linalg import sqrtm
 from sklearn.cluster import KMeans
-import optutils
+from bi_est_python import optutils
 
 
 def em_opt(X, K, max_step=250, rnd_state=0):

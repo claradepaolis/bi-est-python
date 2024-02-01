@@ -5,9 +5,9 @@ import numpy as np
 from scipy.linalg import sqrtm
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
-from initialization import initialize_from_labeled, init_params_from_mu
-from logl import pnu_loglikelihood
-import optutils
+from bi_est_python.initialization import initialize_from_labeled, init_params_from_mu
+from bi_est_python.logl import pnu_loglikelihood
+from bi_est_python import optutils
 
 def PU_nested_em_opt(X_unlabeled, X_labeled_pos, X_labeled_neg, K, max_steps=2000,rnd_state=0, initialization='labeled_means'):
     

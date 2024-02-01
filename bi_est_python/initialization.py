@@ -1,5 +1,5 @@
 import numpy as np
-from emutils import em_opt
+from bi_est_python.emutils import em_opt
 from scipy.spatial.distance import cdist
 
 
