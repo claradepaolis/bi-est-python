@@ -9,6 +9,8 @@ Given an unbiased unlabeled sample and labeled biased positive and negative samp
 
 [1]De Paolis Kaluza, M. Clara, Shantanu Jain, and Predrag Radivojac. "An Approach to Identifying and Quantifying Bias in Biomedical Data." PACIFIC SYMPOSIUM ON BIOCOMPUTING 2023: Kohala Coast, Hawaii, USA, 3–7 January 2023. 2022.
 
+# Demo
+
 
 ```python
 import numpy as np
@@ -94,7 +96,7 @@ sns.scatterplot(x=noisy_labeled_neg[:,0], y=noisy_labeled_neg[:,1], cmap="Blues"
 
 
     
-![png](README_files/README_3_2.png)
+![png](README_files/README_4_2.png)
     
 
 
