@@ -52,7 +52,7 @@ class NMixture:
         if self.num_comps == 1:
             points = self.density.rvs(N)
         else:
-            Nk = np.round(N * self.ps).astype(np.int)
+            Nk = np.round(N * self.ps).astype(int)
             points = []
             for k in range(self.num_comps):
                 if Nk[k] > 1:

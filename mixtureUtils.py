@@ -13,11 +13,11 @@ def auc(mix1, mix2, alpha=0.5, N=1e5):
     N1 = int(alpha*N)
     N2 = int((1-alpha)*N)
     if n_comps1 > 1:
-        N1k = np.round(N1*mix1.ps).astype(np.int)
+        N1k = np.round(N1*mix1.ps).astype(int)
     else:
         N1k = np.array([N1])
     if n_comps2 > 1:
-        N2k = np.round(N2*mix2.ps).astype(np.int)
+        N2k = np.round(N2*mix2.ps).astype(int)
     else:
         N2k = np.array([N2])
 
@@ -46,11 +46,11 @@ def kl(mix1, mix2, alpha=0.5, N=1e5):
     N1 = int(alpha*N)
     N2 = int((1-alpha)*N)
     if n_comps1 > 1:
-        N1k = np.round(N1*mix1.ps).astype(np.int)
+        N1k = np.round(N1*mix1.ps).astype(int)
     else:
         N1k = np.array([N1])
     if n_comps2 > 1:
-        N2k = np.round(N2*mix2.ps).astype(np.int)
+        N2k = np.round(N2*mix2.ps).astype(int)
     else:
         N2k = np.array([N2])
 
