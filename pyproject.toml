@@ -16,6 +16,9 @@ ipykernel = "^6.29.0"
 [tool.poetry.group.dev.dependencies]
 seaborn = "^0.13.2"
 ipykernel = "^6.29.0"
+nbconvert = "^7.15.0"
+jupyter-contrib-nbextensions = "^0.7.0"
+notebook = "6.4.12"
 
 [build-system]
 requires = ["poetry-core"]
