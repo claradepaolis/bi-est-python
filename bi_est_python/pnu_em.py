@@ -113,17 +113,17 @@ class PNU_EM:
             self.w_neg[k] = c / np.sum(~pos_mask)
         
     def log_params(self):
-        print(f"alpha: {self.alpha},\n")
+        print(f"alpha: {np.round(self.alpha, 4)},\n")
 
-        print(f"mu_pos: {self.mu_pos},\n")
-        print(f"cov_pos: {self.cov_pos},\n")
-        print(f"w_pos: {self.w_pos},\n")
-        print(f"v_pos: {self.v_pos},\n")
+        print(f"mu_pos: {np.round(self.mu_pos, 4)},\n")
+        print(f"cov_pos: {np.round(self.cov_pos, 4)},\n")
+        print(f"w_pos: {np.round(self.w_pos, 4)},\n")
+        print(f"v_pos: {np.round(self.v_pos, 4)},\n")
 
-        print(f"mu_neg: {self.mu_neg},\n")
-        print(f"cov_neg: {self.cov_neg},\n")
-        print(f"w_neg: {self.w_neg},\n")
-        print(f"v_neg: {self.v_neg},\n")
+        print(f"mu_neg: {np.round(self.mu_neg, 4)},\n")
+        print(f"cov_neg: {np.round(self.cov_neg, 4)},\n")
+        print(f"w_neg: {np.round(self.w_neg, 4)},\n")
+        print(f"v_neg: {np.round(self.v_neg, 4)},\n")
 
     def fit(self, X_labeled_pos, X_labeled_neg,X_unlabeled,**kwargs):
         """
@@ -172,7 +172,7 @@ class PNU_EM:
 
         self._initialize_parameters(**kwargs)
 
-        self.log_likelihood = -np.inf
+        self.log_likelihood = -1 * 1e10
         self.converged = False
         self.step = 0
         self.start_time = time.time()
@@ -185,10 +185,17 @@ class PNU_EM:
             # self.converged = (updated_params['log_likelihood'] - self.log_likelihood) / self.log_likelihood < self.tol
             for k,v in updated_params.items():
                 setattr(self, k, v)
-            print(f"Step {self.step} Parameters:\n=========================")
-            self.log_params()
+            log_likelihood = self.get_log_likelihood()
+            print(f"Step {self.step} log-likelihood: {log_likelihood}\n=========================")
+            if not self.step % 10:
+                print(f"Step {self.step} Params\n=========================")
+                self.log_params()
+            if (log_likelihood - self.log_likelihood) / self.log_likelihood < self.tol:
+                self.converged = True
+            self.log_likelihood = log_likelihood
         self.stop_time = time.time()
         logging.info(f"EM algorithm converged after {self.step} steps in {self.stop_time - self.start_time} seconds.")
+        self.log_params()
 
     def get_component_pdf(self,X, mu, cov):
         """Calculate the probability density function of the multivariate normal distribution
@@ -302,166 +309,15 @@ class PNU_EM:
                             mu_neg=new_mu_neg, cov_neg=new_cov_neg, w_neg=new_w_neg, v_neg=new_v_neg)
         return new_params
 
-    # def get_updated_params(self):
-    #     if self.scores_unlabeled is None:
-    #         scores_unlabeled = np.ones((self.n_unlabeled,1)) * self.alpha
-    #     else:
-    #         scores_unlabeled = self.scores_unlabeled
-    #     print("getting unlabeled responsibilities")
-    #     pos_responsibilities_unlabeled, neg_responsibilities_unlabeled = self.get_responsibilities(self.X_unlabeled,score=scores_unlabeled) # shape = (U, k+), (U, k-)
-    #     print("getting pos responsibilities")
-    #     pos_responsibilities_labeled_pos, neg_responsibilities_labeled_pos = self.get_responsibilities(self.X_labeled_pos,score=self.scores_labeled_pos) # shape = (L+, k+), (L+, k-)
-    #     print("getting neg responsibilities")
-    #     pos_responsibilities_labeled_neg, neg_responsibilities_labeled_neg = self.get_responsibilities(self.X_labeled_neg,score=self.scores_labeled_neg) # shape = (L-, k+), (L-, k-)
+    def get_log_likelihood(self,):
+        labeled_pos_log_likelihood = np.log(self.get_component_pdf(self.X_labeled_pos, self.mu_pos, self.cov_pos).sum(1)).sum()
+        labeled_neg_log_likelihood = np.log(self.get_component_pdf(self.X_labeled_neg, self.mu_neg, self.cov_neg).sum(1)).sum()
+        unlabeled_pos_likelihoods = self.get_component_pdf(self.X_unlabeled, self.mu_pos, self.cov_pos).sum(1)
+        unlabeled_neg_likelihoods = self.get_component_pdf(self.X_unlabeled, self.mu_neg, self.cov_neg).sum(1)
+        unlabeled_log_likelihood = np.log(self.alpha * unlabeled_pos_likelihoods + (1 - self.alpha) * unlabeled_neg_likelihoods).sum()
 
-    #     new_alpha = (self.weights_unlabeled * pos_responsibilities_unlabeled.sum(1)[...,None]).sum() / self.weights_unlabeled.sum()
-    #     assert new_alpha <= 1 and new_alpha >= 0, f"new_alpha: {new_alpha}"
-    #     # new positive parameters
-    #     new_mu_pos = np.zeros_like(self.mu_pos)
-    #     new_cov_pos = np.zeros_like(self.cov_pos)
-    #     new_w_pos = np.zeros_like(self.w_pos)
-    #     new_eta_pos = np.zeros_like(self.eta_pos)
-    #     # new negative parameters
-    #     new_mu_neg = np.zeros_like(self.mu_neg)
-    #     new_cov_neg = np.zeros_like(self.cov_neg)
-    #     new_w_neg = np.zeros_like(self.w_neg)
-    #     new_eta_neg = np.zeros_like(self.eta_neg)
-    #     # Positive Updates
-    #     for k in range(self.n_components_pos):
-    #         assert self.weights_unlabeled.shape == (self.n_unlabeled,1), f"weights_unlabeled shape: {self.weights_unlabeled.shape}"
-    #         assert pos_responsibilities_unlabeled[:,k][...,None].shape == (self.n_unlabeled,1), f"pos_responsibilities_unlabeled shape: {pos_responsibilities_unlabeled[:,k][...,None].shape}"
-    #         assert scores_unlabeled.shape == (self.n_unlabeled,1), f"scores_unlabeled shape: {scores_unlabeled.shape}"
-    #         w_u = self.weights_unlabeled * pos_responsibilities_unlabeled[:,k][...,None] * scores_unlabeled
-    #         assert w_u.shape == (self.n_unlabeled,1), f"w_u shape: {w_u.shape}"
-    #         w_l_pos = self.weights_pos * pos_responsibilities_labeled_pos[:,k][...,None] * self.scores_labeled_pos
-    #         # logging.debug(f"w_l_pos : {w_l_pos}")
-    #         assert w_l_pos.shape == (self.n_labeled_pos,1), f"w_l_pos shape: {w_l_pos.shape}"
-    #         w_l_neg = self.weights_neg * neg_responsibilities_labeled_neg[:,k][...,None] * self.scores_labeled_neg
-    #         assert w_l_neg.shape == (self.n_labeled_neg,1), f"w_l_neg shape: {w_l_neg.shape}"
-    #         # logging.debug(f"s1 : {(w_u * self.X_unlabeled).sum().shape} s2: {(w_l_pos * self.X_labeled_pos).sum().shape} s3: {(w_l_neg * self.X_labeled_neg).sum().shape}")
-    #         new_mu_pos[k] = ((w_u * self.X_unlabeled).sum(0) + (w_l_pos * self.X_labeled_pos).sum(0) + (w_l_neg * self.X_labeled_neg).sum(0)) / (np.sum(w_u) + np.sum(w_l_pos) + np.sum(w_l_neg))
-    #         centered_unlabeled = self.X_unlabeled - self.mu_pos[k]
-    #         centered_labeled_pos = self.X_labeled_pos - self.mu_pos[k]
-    #         centered_labeled_neg = self.X_labeled_neg - self.mu_pos[k]
-    #         # logging.debug(f"centered unlabeled: {centered_unlabeled.shape}, w_u : {w_u.shape}")
-    #         # logging.debug(f"centered cov : {np.cov(centered_unlabeled, rowvar=False,aweights=w_u.ravel()).shape}")
-    #         c1 = np.zeros((self.n_features, self.n_features))
-    #         c2 = np.zeros_like(c1)
-    #         c3 = np.zeros_like(c1)
-    #         if w_u.sum():
-    #             c1 = np.cov(centered_unlabeled, rowvar=False,aweights=w_u.ravel())
-    #         if w_l_pos.sum():
-    #             c2 = np.cov(centered_labeled_pos, rowvar=False,aweights=w_l_pos.ravel())
-    #         if w_l_neg.sum():
-    #             # logging.debug(f"w_l_neg stats: min: {w_l_neg.min()} max : {w_l_neg.max()}, sum : {w_l_neg.sum()}")
-    #             c3 = np.cov(centered_labeled_neg, rowvar=False,aweights=w_l_neg.ravel())
-    #         # logging.debug(f"c1: {c1}, c2: {c2}, c3: {c3}")
-    #         # new_cov_pos[k] = (c1 + c2 + c3) / (np.sum(w_u) + np.sum(w_l_pos) + np.sum(w_l_neg))
-            
-    #         num = 0.0
-    #         den = 0.0
-    #         for i in range(self.n_labeled_pos):
-    #             num += w_l_pos[i] * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
-    #             den += w_l_pos[i]
-    #         for i in range(self.n_labeled_neg):
-    #             num += w_l_neg[i] * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
-    #             den += w_l_neg[i]
-    #         for i in range(self.n_unlabeled):
-    #             num += w_u[i] * np.outer(centered_unlabeled[i], centered_unlabeled[i])
-    #             den += w_u[i]
-    #         new_cov_pos[k] = num / den
+        return labeled_pos_log_likelihood + labeled_neg_log_likelihood + unlabeled_log_likelihood
 
-
-    #         # print(f"normalized pos responsibilities", (pos_responsibilities_unlabeled[:5,k][...,None] / pos_responsibilities_unlabeled[:5].sum(1)[...,None]), )
-    #         normalized_responsibility_k = pos_responsibilities_unlabeled[:,k][...,None] / pos_responsibilities_unlabeled.sum(1)[...,None]
-    #         assert normalized_responsibility_k.shape == (self.n_unlabeled,1), f"normalized_responsibility_k shape: {normalized_responsibility_k.shape}"
-    #         new_w_pos[k] = (self.weights_unlabeled * normalized_responsibility_k).sum() / (self.weights_unlabeled.sum())
-    #         normalized_labeled_responsibility_k = pos_responsibilities_labeled_pos[:,k][...,None] / pos_responsibilities_labeled_pos.sum(1)[...,None]
-    #         new_eta_pos[k] = (self.weights_pos * normalized_labeled_responsibility_k).sum() / self.weights_pos.sum()
-    #     # print("new w pos: ", new_w_pos)
-    #     assert new_w_pos.shape == (self.n_components_pos,1), f"new_w_pos shape: {new_w_pos.shape}"
-    #     assert np.allclose(new_w_pos.sum(),1), f"new_w_pos sum: {new_w_pos.sum()}"
-    #     assert new_eta_pos.shape == (self.n_components_pos,1), f"new_eta_pos shape: {new_eta_pos.shape}"
-    #     assert np.allclose(new_eta_pos.sum(),1), f"new_eta_pos sum: {new_eta_pos.sum()}"
-    #     # Negative Updates
-    #     for k in range(self.n_components_neg):
-    #         w_u = self.weights_unlabeled * neg_responsibilities_unlabeled[:,k][...,None] * (1 - scores_unlabeled)
-    #         w_l_pos = self.weights_pos * neg_responsibilities_labeled_pos[:,k][...,None] * (1 - self.scores_labeled_pos)
-    #         w_l_neg = self.weights_neg * neg_responsibilities_labeled_neg[:,k][...,None] * (1 - self.scores_labeled_neg)
-    #         new_mu_neg[k] = ((w_u * self.X_unlabeled).sum(0) + \
-    #                             (w_l_pos * self.X_labeled_pos).sum(0) + \
-    #                                 (w_l_neg * self.X_labeled_neg).sum(0)) / (np.sum(w_u) + np.sum(w_l_pos) + np.sum(w_l_neg))
-    #         centered_unlabeled = self.X_unlabeled - self.mu_neg[k]
-    #         centered_labeled_pos = self.X_labeled_pos - self.mu_neg[k]
-    #         centered_labeled_neg = self.X_labeled_neg - self.mu_neg[k]
-    #         c1 = np.zeros((self.n_features, self.n_features))
-    #         c2 = np.zeros_like(c1)
-    #         c3 = np.zeros_like(c1)
-    #         if w_u.sum():
-    #             c1 = np.cov(centered_unlabeled, rowvar=False,aweights=w_u.ravel())
-    #         if w_l_pos.sum():
-    #             c2 = np.cov(centered_labeled_pos, rowvar=False,aweights=w_l_pos.ravel())
-    #         if w_l_neg.sum():
-    #             # logging.debug(f"w_l_neg stats: min: {w_l_neg.min()} max : {w_l_neg.max()}, sum : {w_l_neg.sum()}")
-    #             c3 = np.cov(centered_labeled_neg, rowvar=False,aweights=w_l_neg.ravel())
-    #         # logging.debug(f"c1 : {c1} c2 : {c2} c3 : {c3}")
-
-    #         # new_cov_neg[k] = (c1 + c2 + c3) / (np.sum(w_u) + np.sum(w_l_pos) + np.sum(w_l_neg))
-            
-    #         num = 0.0
-    #         den = 0.0
-    #         for i in range(self.n_labeled_pos):
-    #             num += w_l_pos[i] * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
-    #             den += w_l_pos[i]
-    #         for i in range(self.n_labeled_neg):
-    #             num += w_l_neg[i] * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
-    #             den += w_l_neg[i]
-    #         for i in range(self.n_unlabeled):
-    #             num += w_u[i] * np.outer(centered_unlabeled[i], centered_unlabeled[i])
-    #             den += w_u[i]
-    #         new_cov_neg[k] = num / den
-
-    #         new_w_neg[k] = (self.weights_unlabeled * (neg_responsibilities_unlabeled[:,k][...,None] / neg_responsibilities_unlabeled.sum(1)[...,None])).sum() / (self.weights_unlabeled.sum())
-    #         new_eta_neg[k] = (self.weights_neg * (neg_responsibilities_labeled_neg[:,k][...,None] / neg_responsibilities_labeled_neg.sum(1)[...,None])).sum() / self.weights_neg.sum()
-    #     assert np.allclose(new_w_neg.sum(),1), f"new_w_neg sum: {new_w_neg.sum()}"
-    #     assert np.allclose(new_eta_neg.sum(),1), f"new_eta_neg sum: {new_eta_neg.sum()}"
-    #     if self.scores_unlabeled is None:
-    #         new_scores_unlabeled = np.ones(self.n_unlabeled) * self.alpha
-    #     else:
-    #         new_scores_unlabeled = self.scores_unlabeled
-    #     for k in range(self.n_components_pos):
-    #         new_cov_pos[k] = self.covariance_reconditioning(new_cov_pos[k])
-    #     for k in range(self.n_components_neg):
-    #         new_cov_neg[k] = self.covariance_reconditioning(new_cov_neg[k])
-        
-    #     new_params = dict(alpha=new_alpha, mu_pos=new_mu_pos, cov_pos=new_cov_pos, w_pos=new_w_pos, eta_pos=new_eta_pos,
-    #                         mu_neg=new_mu_neg, cov_neg=new_cov_neg, w_neg=new_w_neg, eta_neg=new_eta_neg, scores_unlabeled=new_scores_unlabeled)
-    #     # logging.debug(f"New Parameters Step {self.step}:\n")
-    #     # for k,v in new_params.items():
-    #     #     logging.debug(f"{k}: {v}")
-
-
-    #     # llu = np.log(new_scores_unlabeled * w_u @ self.get_component_pdf(self.X_unlabeled, new_mu_pos, new_cov_pos)  + \
-    #     #                             (1 - new_scores_unlabeled) * (1 - w_u)  @ self.get_component_pdf(self.X_unlabeled, new_mu_neg, new_cov_neg)).sum()
-
-    #     # llp = np.log(self.scores_labeled_pos * w_l_pos @ self.get_component_pdf(self.X_labeled_pos, new_mu_pos, new_cov_pos) + \
-    #     #                                     (1 - self.scores_labeled_pos) * (1 - w_l_pos) @ self.get_component_pdf(self.X_labeled_pos, new_mu_neg, new_cov_neg)).sum()
-    #     # lln = np.log(self.scores_labeled_neg * w_l_neg @ self.get_component_pdf(self.X_labeled_neg, new_mu_pos, new_cov_pos) + \
-    #     #                                             (1 - self.scores_labeled_neg) * (1 - w_l_neg) @ self.get_component_pdf(self.X_labeled_neg, new_mu_neg, new_cov_neg)).sum()
-    #     # new_log_likelihood = llu + llp + lln
-    #     return dict(alpha=new_alpha, mu_pos=new_mu_pos, cov_pos=new_cov_pos, w_pos=new_w_pos, eta_pos=new_eta_pos,
-    #                     mu_neg=new_mu_neg, cov_neg=new_cov_neg, w_neg=new_w_neg, eta_neg=new_eta_neg)
-
-    
-
-    def covariance_reconditioning(self,cov,**kwargs):
-        cond_min = kwargs.get('cond_min',1000)
-        eps=kwargs.get('cond_exp',0.001)
-        s_cond = np.linalg.cond(cov)
-
-        if s_cond > cond_min:
-            cov = optutils.recondition_sig(cov, cond_min, self.n_features, eps)
-        return cov
 
 if __name__ == "__main__":
     test_pnu_em()
