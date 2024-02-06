@@ -8,10 +8,6 @@ from scipy.stats import multivariate_normal
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-from bi_est_python.initialization import initialize_from_labeled, init_params_from_mu
-from bi_est_python.logl import pnu_loglikelihood
-from bi_est_python import optutils
-
 class PNU_EM:
     def __init__(self, **kwargs):
         """
@@ -162,9 +158,11 @@ class PNU_EM:
 
         self.n_components_pos = kwargs.get('n_components_pos', 2)
         self.n_components_neg = kwargs.get('n_components_neg', 2)
-        self.scores_unlabeled = kwargs.get("scores_unlabeled", None)
-        self.scores_labeled_pos = kwargs.get("scores_labeled_pos", np.ones((self.n_labeled_pos,1)))
-        self.scores_labeled_neg = kwargs.get("scores_labeled_neg", np.zeros((self.n_labeled_neg,1)))
+        self.original_scores_unlabeled = kwargs.get("scores_unlabeled", None)
+        if self.original_scores_unlabeled is not None:
+            self.original_scores_unlabeled = self.original_scores_unlabeled.reshape((-1,1))
+        self.scores_labeled_pos = kwargs.get("scores_labeled_pos", np.ones((self.n_labeled_pos,1))).reshape((-1,1))
+        self.scores_labeled_neg = kwargs.get("scores_labeled_neg", np.zeros((self.n_labeled_neg,1))).reshape((-1,1))
         self.weighting_scheme = kwargs.get("weighting_scheme", "instance")
         if self.weighting_scheme not in ["instance", "sample"]:
             raise ValueError("weighting_scheme must be one of ['instance', 'sample']")
@@ -180,6 +178,10 @@ class PNU_EM:
         self.log_params()
         self.converged = False
         while not self.converged and self.step < self.max_steps:
+            if self.original_scores_unlabeled is not None:
+                self.scores_unlabeled = self.original_scores_unlabeled
+            else:
+                self.scores_unlabeled = np.ones((self.n_unlabeled,1)) * self.alpha
             self.step += 1
             updated_params = self.get_updated_params()
             # self.converged = (updated_params['log_likelihood'] - self.log_likelihood) / self.log_likelihood < self.tol
@@ -233,30 +235,36 @@ class PNU_EM:
         return (np.sum(self.weights_unlabeled * omega_plus)) / self.weights_unlabeled.sum()
 
     def get_updated_w(self, omega_plus, omega_minus):
-        w_plus = (omega_plus.T @ self.weights_unlabeled) / (self.alpha * self.weights_unlabeled.sum())
-        w_minus = (omega_minus.T @ self.weights_unlabeled) / ((1 - self.alpha) * self.weights_unlabeled.sum())
+        w_plus = (omega_plus.T @ (self.scores_unlabeled * self.weights_unlabeled)) / (self.alpha * (self.scores_unlabeled * self.weights_unlabeled).sum())
+        w_minus = (omega_minus.T @ ((1 - self.scores_unlabeled) * self.weights_unlabeled)) / ((1 - self.alpha) * ((1 - self.scores_unlabeled) * self.weights_unlabeled).sum())
         return w_plus, w_minus
     
     def get_updated_v(self, eta_plus, eta_minus):
-        return eta_plus.T @ self.weights_pos / self.weights_pos.sum(), eta_minus.T @ self.weights_neg / self.weights_neg.sum()
+        return eta_plus.T @ (self.scores_labeled_pos * self.weights_pos) / (self.scores_labeled_pos * self.weights_pos).sum(), eta_minus.T @ ((1 - self.scores_labeled_neg) * self.weights_neg) / ((1 - self.scores_labeled_neg) * self.weights_neg).sum()
 
-    def get_updated_mean(self, omega_plus, omega_minus, eta_plus, eta_minus):
+    def get_updated_mean(self, omega_plus, omega_minus, eta_plus, positive_eta_minus, negative_eta_plus, eta_minus):
         mu_plus = np.zeros((self.n_components_pos, self.n_features))
         mu_minus = np.zeros((self.n_components_neg, self.n_features))
 
         for k in range(self.n_components_pos):
-            mu_plus[k] = ((self.weights_unlabeled * omega_plus[:,k][...,None]) * self.X_unlabeled).sum(axis=0) + \
-                            ((self.weights_pos * eta_plus[:,k][...,None]) * self.X_labeled_pos).sum(axis=0)
-            mu_plus[k] /= (np.sum(self.weights_unlabeled * omega_plus[:,k][...,None]) + np.sum(self.weights_pos * eta_plus[:,k][...,None]))
+            mu_plus[k] = ((self.weights_unlabeled * self.scores_unlabeled * omega_plus[:,k][...,None]) * self.X_unlabeled).sum(axis=0) + \
+                            ((self.weights_pos * self.scores_labeled_pos * eta_plus[:,k][...,None]) * self.X_labeled_pos).sum(axis=0) + \
+                                ((self.weights_neg * self.scores_labeled_neg * negative_eta_plus[:,k][...,None]) * self.X_labeled_neg).sum(axis=0)
+            mu_plus[k] /= (np.sum(self.weights_unlabeled * self.scores_unlabeled * omega_plus[:,k][...,None]) + \
+                            np.sum(self.weights_pos * self.scores_labeled_pos * eta_plus[:,k][...,None]) + \
+                                np.sum(self.weights_neg * self.scores_labeled_neg * negative_eta_plus[:,k][...,None]))
 
         for k in range(self.n_components_neg):
-            mu_minus[k] = ((self.weights_unlabeled * omega_minus[:,k][...,None]) * self.X_unlabeled).sum(axis=0) + \
-                            (self.weights_neg * eta_minus[:,k][...,None] * self.X_labeled_neg).sum(axis=0)
-            mu_minus[k] /= (np.sum(self.weights_unlabeled * omega_minus[:,k][...,None]) + np.sum(self.weights_neg * eta_minus[:,k][...,None]))
+            mu_minus[k] = ((self.weights_unlabeled * (1 - self.scores_unlabeled) * omega_minus[:,k][...,None]) * self.X_unlabeled).sum(axis=0) + \
+                            (self.weights_neg * (1 - self.scores_labeled_neg) * eta_minus[:,k][...,None] * self.X_labeled_neg).sum(axis=0) + \
+                                (self.weights_pos * (1 - self.scores_labeled_pos) * positive_eta_minus[:,k][...,None] * self.X_labeled_pos).sum(axis=0)
+            mu_minus[k] /= (np.sum(self.weights_unlabeled * (1 - self.scores_unlabeled) * omega_minus[:,k][...,None]) + \
+                            np.sum(self.weights_neg * (1 - self.scores_labeled_neg) * eta_minus[:,k][...,None]) + \
+                                np.sum(self.weights_pos * (1 - self.scores_labeled_pos) * positive_eta_minus[:,k][...,None]))
 
         return mu_plus, mu_minus
     
-    def get_updated_cov(self,omega_plus, omega_minus, eta_plus, eta_minus):
+    def get_updated_cov(self,omega_plus, omega_minus, eta_plus, positive_eta_minus, negative_eta_plus, eta_minus):
 
         cov_plus = np.zeros((self.n_components_pos, self.n_features, self.n_features))
         cov_minus = np.zeros((self.n_components_neg, self.n_features, self.n_features))
@@ -264,27 +272,35 @@ class PNU_EM:
         for k in range(self.n_components_pos):
             positively_centered_unlabeled = self.X_unlabeled - self.mu_pos[k]
             centered_labeled_pos = self.X_labeled_pos - self.mu_pos[k]
+            centered_labeled_neg = self.X_labeled_neg - self.mu_pos[k]
             num = np.zeros((self.n_features, self.n_features))
             den = 0.0
             for i in range(self.n_unlabeled):
-                num += (self.weights_unlabeled[i] * omega_plus[i,k]) * np.outer(positively_centered_unlabeled[i], positively_centered_unlabeled[i])
-                den += (self.weights_unlabeled[i] * omega_plus[i,k])
+                num += (self.scores_unlabeled[i] * self.weights_unlabeled[i] * omega_plus[i,k]) * np.outer(positively_centered_unlabeled[i], positively_centered_unlabeled[i])
+                den += (self.scores_unlabeled[i] * self.weights_unlabeled[i] * omega_plus[i,k])
             for i in range(self.n_labeled_pos):
-                num += (self.weights_pos[i] * eta_plus[i,k]) * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
-                den += (self.weights_pos[i] * eta_plus[i,k])
+                num += (self.scores_labeled_pos[i] * self.weights_pos[i] * eta_plus[i,k]) * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
+                den += (self.scores_labeled_pos[i] * self.weights_pos[i] * eta_plus[i,k])
+            for i in range(self.n_labeled_neg):
+                num += (self.scores_labeled_neg[i] * self.weights_neg[i] * negative_eta_plus[i,k]) * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
+                den += (self.scores_labeled_neg[i] * self.weights_neg[i] * negative_eta_plus[i,k])
             cov_plus[k] = num / den
 
         for k in range(self.n_components_neg):
             negatively_centered_unlabeled = self.X_unlabeled - self.mu_neg[k]
             centered_labeled_neg = self.X_labeled_neg - self.mu_neg[k]
+            centered_labeled_pos = self.X_labeled_pos - self.mu_neg[k]
             num = np.zeros((self.n_features, self.n_features))
             den = 0.0
             for i in range(self.n_unlabeled):
-                num += (self.weights_unlabeled[i] * omega_minus[i,k]) * np.outer(negatively_centered_unlabeled[i], negatively_centered_unlabeled[i])
-                den += (self.weights_unlabeled[i] * omega_minus[i,k])
+                num += ((1 - self.scores_unlabeled[i]) * self.weights_unlabeled[i] * omega_minus[i,k]) * np.outer(negatively_centered_unlabeled[i], negatively_centered_unlabeled[i])
+                den += ((1 - self.scores_unlabeled[i]) * self.weights_unlabeled[i] * omega_minus[i,k])
             for i in range(self.n_labeled_neg):
-                num += (self.weights_neg[i] * eta_minus[i,k]) * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
-                den += (self.weights_neg[i] * eta_minus[i,k])
+                num += ((1 - self.scores_labeled_neg[i]) * self.weights_neg[i] * eta_minus[i,k]) * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
+                den += ((1 - self.scores_labeled_neg[i]) * self.weights_neg[i] * eta_minus[i,k])
+            for i in range(self.n_labeled_pos):
+                num += ((1 - self.scores_labeled_pos[i]) * self.weights_pos[i] * positive_eta_minus[i,k]) * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
+                den += ((1 - self.scores_labeled_pos[i]) * self.weights_pos[i] * positive_eta_minus[i,k])
             cov_minus[k] = num / den
 
         return cov_plus, cov_minus
@@ -302,8 +318,12 @@ class PNU_EM:
         new_alpha = self.get_updated_alpha(omega_plus=omega_plus)
         new_w_pos, new_w_neg = self.get_updated_w(omega_plus=omega_plus, omega_minus=omega_minus)
         new_v_pos, new_v_neg = self.get_updated_v(eta_plus=eta_plus, eta_minus=eta_minus)
-        new_mu_pos, new_mu_neg = self.get_updated_mean(omega_plus=omega_plus, omega_minus=omega_minus, eta_plus=eta_plus, eta_minus=eta_minus)
-        new_cov_pos, new_cov_neg = self.get_updated_cov(omega_plus=omega_plus, omega_minus=omega_minus, eta_plus=eta_plus, eta_minus=eta_minus)
+        new_mu_pos, new_mu_neg = self.get_updated_mean(omega_plus=omega_plus, omega_minus=omega_minus,
+                                                        eta_plus=eta_plus, positive_eta_minus=labeled_pos_eta_minus,
+                                                        negative_eta_plus=labeled_neg_eta_plus, eta_minus=eta_minus)
+        new_cov_pos, new_cov_neg = self.get_updated_cov(omega_plus=omega_plus, omega_minus=omega_minus,
+                                                        eta_plus=eta_plus, positive_eta_minus=labeled_pos_eta_minus,
+                                                        negative_eta_plus=labeled_neg_eta_plus, eta_minus=eta_minus)
         new_params = dict(alpha=new_alpha, mu_pos=new_mu_pos, cov_pos=new_cov_pos, w_pos=new_w_pos, v_pos=new_v_pos,
                             mu_neg=new_mu_neg, cov_neg=new_cov_neg, w_neg=new_w_neg, v_neg=new_v_neg)
         return new_params

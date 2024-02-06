@@ -4,7 +4,6 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from bi_est_python.pnu_em import PNU_EM
-from bi_est_python.empnu import PU_nested_em_opt
 from bi_est_python.Mixture import NMixture, PUMixture
 
 def get_data():
@@ -48,37 +47,13 @@ def get_data():
 
 def test_pnu_em():
     labeled_pos, labeled_neg, unlabeled_data, unlabeled, pos_bias, neg_bias = get_data()
+    noisy_labeled_pos = np.concatenate((labeled_pos, labeled_neg[:3]))
+    scores_labeled_pos = np.concatenate((np.ones(len(labeled_pos)), np.zeros(3)))
+    noisy_labeled_neg = np.concatenate((labeled_neg, labeled_pos[:3]))
+    scores_labeled_neg = np.concatenate((np.zeros(len(labeled_neg)), np.ones(3)))
     em = PNU_EM(n_components=2,max_steps=500)
-    em.fit(labeled_pos, labeled_neg, unlabeled_data)
+    em.fit(noisy_labeled_pos, noisy_labeled_neg, unlabeled_data,scores_labeled_pos=scores_labeled_pos, scores_labeled_neg=scores_labeled_neg)
     return em
-
-def test_empnu():
-    labeled_pos, labeled_neg, unlabeled_data, unlabeled, pos_bias, neg_bias = get_data()
-    alpha, w, w_labeled, sg, mu, lls = PU_nested_em_opt(unlabeled_data, labeled_pos, labeled_neg, 2)
-    # print(alpha, w, w_labeled, sg, mu, lls)
-    print(f"alpha: {alpha}")
-    print(f"w: {w}")
-    print(f"w_labeled: {w_labeled}")
-    print(f"sg: {sg}")
-    print(f"mu: {mu}")
-    # print(f"lls: {lls}")
-
-
-def plot_data(pos_bias, neg_bias, unlabeled):
-    # plotting
-
-    xs=np.arange(-10,15,0.1)
-    sns.lineplot(x=xs, y=pos_bias.points_pdf(xs), linewidth=2, label='Positive')
-    sns.lineplot(x=xs, y=neg_bias.points_pdf(xs), linewidth=2, label='Negative')
-
-    sns.lineplot(x=xs, y=unlabeled.points_pdf(xs), linewidth=2, label='Unlabeled')
-
-    sns.lineplot(x=xs, y=unlabeled.alpha*unlabeled.pos.points_pdf(xs), 
-                linewidth=2, linestyle=':', label='true positive in unlabeled')
-    sns.lineplot(x=xs, y=(1-unlabeled.alpha)*unlabeled.neg.points_pdf(xs), 
-                linewidth=2, linestyle=':', label='true negative in unlabeled')
-    return plt.gcf()
 
 if __name__ == "__main__":
     test_pnu_em()
-    # test_empnu()
