@@ -213,47 +213,46 @@ class PNU_EM:
         n = X.shape[0]
         if score is None:
             score = np.ones((n,1)) * self.alpha
-            # score = np.concatenate((1 - score, score), axis=1)
         component_pdfs_pos = self.get_component_pdf(X, self.mu_pos, self.cov_pos)
         component_pdfs_neg = self.get_component_pdf(X, self.mu_neg, self.cov_neg)
 
-        omega_plus = np.zeros((n, self.n_components_pos))
-        omega_minus = np.zeros((n, self.n_components_neg))
+        positive_responsibilities = np.zeros((n, self.n_components_pos))
+        negative_responsibilities = np.zeros((n, self.n_components_neg))
 
         for i in range(n):
             for k in range(self.n_components_pos):
-                omega_plus[i,k] = score[i] * component_pdfs_pos[i,k] * pos_mixture_weight[k]
+                positive_responsibilities[i,k] = score[i] * component_pdfs_pos[i,k] * pos_mixture_weight[k]
             for k in range(self.n_components_neg):
-                omega_minus[i,k] = (1 - score[i]) * component_pdfs_neg[i,k] * negative_mixture_weights[k]
-            norm_i = omega_plus[i].sum() + omega_minus[i].sum()
-            omega_plus[i] /= norm_i
-            omega_minus[i] /= norm_i
-        return omega_plus, omega_minus
+                negative_responsibilities[i,k] = (1 - score[i]) * component_pdfs_neg[i,k] * negative_mixture_weights[k]
+            norm_i = positive_responsibilities[i].sum() + negative_responsibilities[i].sum()
+            positive_responsibilities[i] /= norm_i
+            negative_responsibilities[i] /= norm_i
+        return positive_responsibilities, negative_responsibilities
 
     def get_updated_alpha(self, omega_plus):
-        return np.sum(omega_plus) / self.n_unlabeled
+        return (np.sum(self.weights_unlabeled * omega_plus)) / self.weights_unlabeled.sum()
 
     def get_updated_w(self, omega_plus, omega_minus):
-        w_plus = omega_plus.sum(0) / (self.alpha * self.n_unlabeled)
-        w_minus = omega_minus.sum(0) / ((1 - self.alpha) * self.n_unlabeled)
+        w_plus = (omega_plus.T @ self.weights_unlabeled) / (self.alpha * self.weights_unlabeled.sum())
+        w_minus = (omega_minus.T @ self.weights_unlabeled) / ((1 - self.alpha) * self.weights_unlabeled.sum())
         return w_plus, w_minus
     
     def get_updated_v(self, eta_plus, eta_minus):
-        return eta_plus.sum(0) / self.n_labeled_pos, eta_minus.sum(0) / self.n_labeled_neg
-    
+        return eta_plus.T @ self.weights_pos / self.weights_pos.sum(), eta_minus.T @ self.weights_neg / self.weights_neg.sum()
+
     def get_updated_mean(self, omega_plus, omega_minus, eta_plus, eta_minus):
         mu_plus = np.zeros((self.n_components_pos, self.n_features))
         mu_minus = np.zeros((self.n_components_neg, self.n_features))
 
         for k in range(self.n_components_pos):
-            mu_plus[k] = (omega_plus[:,k][...,None] * self.X_unlabeled).sum(axis=0) + \
-                            (eta_plus[:,k][...,None] * self.X_labeled_pos).sum(axis=0)
-            mu_plus[k] /= (np.sum(omega_plus[:,k]) + np.sum(eta_plus[:,k]))
+            mu_plus[k] = ((self.weights_unlabeled * omega_plus[:,k][...,None]) * self.X_unlabeled).sum(axis=0) + \
+                            ((self.weights_pos * eta_plus[:,k][...,None]) * self.X_labeled_pos).sum(axis=0)
+            mu_plus[k] /= (np.sum(self.weights_unlabeled * omega_plus[:,k][...,None]) + np.sum(self.weights_pos * eta_plus[:,k][...,None]))
 
         for k in range(self.n_components_neg):
-            mu_minus[k] = (omega_minus[:,k][...,None] * self.X_unlabeled).sum(axis=0) + \
-                            (eta_minus[:,k][...,None] * self.X_labeled_neg).sum(axis=0)
-            mu_minus[k] /= (np.sum(omega_minus[:,k]) + np.sum(eta_minus[:,k]))
+            mu_minus[k] = ((self.weights_unlabeled * omega_minus[:,k][...,None]) * self.X_unlabeled).sum(axis=0) + \
+                            (self.weights_neg * eta_minus[:,k][...,None] * self.X_labeled_neg).sum(axis=0)
+            mu_minus[k] /= (np.sum(self.weights_unlabeled * omega_minus[:,k][...,None]) + np.sum(self.weights_neg * eta_minus[:,k][...,None]))
 
         return mu_plus, mu_minus
     
@@ -268,11 +267,11 @@ class PNU_EM:
             num = np.zeros((self.n_features, self.n_features))
             den = 0.0
             for i in range(self.n_unlabeled):
-                num += omega_plus[i,k] * np.outer(positively_centered_unlabeled[i], positively_centered_unlabeled[i])
-                den += omega_plus[i,k]
+                num += (self.weights_unlabeled[i] * omega_plus[i,k]) * np.outer(positively_centered_unlabeled[i], positively_centered_unlabeled[i])
+                den += (self.weights_unlabeled[i] * omega_plus[i,k])
             for i in range(self.n_labeled_pos):
-                num += eta_plus[i,k] * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
-                den += eta_plus[i,k]
+                num += (self.weights_pos[i] * eta_plus[i,k]) * np.outer(centered_labeled_pos[i], centered_labeled_pos[i])
+                den += (self.weights_pos[i] * eta_plus[i,k])
             cov_plus[k] = num / den
 
         for k in range(self.n_components_neg):
@@ -281,22 +280,22 @@ class PNU_EM:
             num = np.zeros((self.n_features, self.n_features))
             den = 0.0
             for i in range(self.n_unlabeled):
-                num += omega_minus[i,k] * np.outer(negatively_centered_unlabeled[i], negatively_centered_unlabeled[i])
-                den += omega_minus[i,k]
+                num += (self.weights_unlabeled[i] * omega_minus[i,k]) * np.outer(negatively_centered_unlabeled[i], negatively_centered_unlabeled[i])
+                den += (self.weights_unlabeled[i] * omega_minus[i,k])
             for i in range(self.n_labeled_neg):
-                num += eta_minus[i,k] * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
-                den += eta_minus[i,k]
+                num += (self.weights_neg[i] * eta_minus[i,k]) * np.outer(centered_labeled_neg[i], centered_labeled_neg[i])
+                den += (self.weights_neg[i] * eta_minus[i,k])
             cov_minus[k] = num / den
 
         return cov_plus, cov_minus
 
     def get_updated_params(self):
         omega_plus, omega_minus = self.get_responsibilities(self.X_unlabeled,self.w_pos, self.w_neg)
-        eta_plus, _ = self.get_responsibilities(self.X_labeled_pos,
+        eta_plus, labeled_pos_eta_minus = self.get_responsibilities(self.X_labeled_pos,
                                                     score=self.scores_labeled_pos,
                                                     pos_mixture_weight=self.v_pos,
                                                     negative_mixture_weights=self.v_neg)
-        _, eta_minus = self.get_responsibilities(self.X_labeled_neg,
+        labeled_neg_eta_plus, eta_minus = self.get_responsibilities(self.X_labeled_neg,
                                                     score=self.scores_labeled_neg,
                                                     pos_mixture_weight=self.v_pos,
                                                     negative_mixture_weights=self.v_neg)
