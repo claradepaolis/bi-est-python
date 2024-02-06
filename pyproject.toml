@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "bi_est_python"
+version = "0.1.0"
+description = "[fork of claradepaolis/bi-est-python] Estimate bias in semisupervised data via nested Expectation Maximization"
+authors = ["Daniel Zeiberg <zeiberg.d@northeastern.edu>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+scipy = "^1.12.0"
+numpy = "^1.26.3"
+scikit-learn = "^1.4.0"
+ipykernel = "^6.29.0"
+
+[tool.poetry.group.dev.dependencies]
+seaborn = "^0.13.2"
+ipykernel = "^6.29.0"
+nbconvert = "^7.15.0"
+jupyter-contrib-nbextensions = "^0.7.0"
+notebook = "6.4.12"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
