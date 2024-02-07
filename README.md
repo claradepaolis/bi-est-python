@@ -19,9 +19,9 @@ the true underlying population of the classes represented by the labels.
 <img width="1109" alt="image" src="https://github.com/claradepaolis/bi-est-python/assets/19443235/566d3e18-85ea-46c4-b3e0-d3fb5fb54311">
 We’re interested in detecting and quantifying the level of bias in these labeled data in the semi-supervised learning setting.
 
-More precisely, let’s consider a classification problem where we are interested in two classes, let’s call them the positive and the negative classes. We may have a large trove unlabeled data, represented on the left by the black distribution, but we don’t know the underlying class labels of that data. 
+More precisely, let’s consider a classification problem where we are interested in two classes, let’s call them the positive and the negative classes. We may have a large trove unlabeled data, represented in the figure above by the black distribution, but we don’t know the underlying class labels of that data. 
 
-Ideally, we would have labels for each class that are drawn from the same underlying population, but this may not the be case.
+Ideally, we would have labels for each class that are drawn from the same underlying population, but this may not be the case.
 
 Instead, what is available to us is some sample of labeled data, but due to feasibility of labeling, sampling bias, the availability of only some subpopulations, or other mechanisms, the distribution within each label class is not representative of the corresponding class distribution. 
 
