@@ -75,13 +75,13 @@ class PNU_EM:
     
     def second_init_step(self,**kwargs):
         """ Run step 2 """
-        kmeans_unlabeled = KMeans(n_clusters=self.n_components_pos + self.n_components_neg,
+        self.kmeans_unlabeled = KMeans(n_clusters=self.n_components_pos + self.n_components_neg,
                                     random_state=self.rnd_state, n_init=kwargs.get("n_init", 10))
-        kmeans_unlabeled.fit(self.X_unlabeled, sample_weight=self.weights_unlabeled.ravel())
-        cluster_distances = cdist(kmeans_unlabeled.cluster_centers_,self.kmeans_pos.cluster_centers_) # shape = (n_components_pos + n_components_neg, n_components_pos)
+        self.kmeans_unlabeled.fit(self.X_unlabeled, sample_weight=self.weights_unlabeled.ravel())
+        cluster_distances = cdist(self.kmeans_unlabeled.cluster_centers_,self.kmeans_pos.cluster_centers_) # shape = (n_components_pos + n_components_neg, n_components_pos)
         cluster_order = np.argsort(cluster_distances.min(1))
-        self.mu_pos = kmeans_unlabeled.cluster_centers_[cluster_order[:self.n_components_pos]]
-        self.mu_neg = kmeans_unlabeled.cluster_centers_[cluster_order[self.n_components_pos:]]
+        self.mu_pos = self.kmeans_unlabeled.cluster_centers_[cluster_order[:self.n_components_pos]]
+        self.mu_neg = self.kmeans_unlabeled.cluster_centers_[cluster_order[self.n_components_pos:]]
 
     def third_and_fourth_init_step(self, **kwargs):
         """ Run step 3 """
@@ -121,6 +121,32 @@ class PNU_EM:
         print(f"w_neg: {np.round(self.w_neg, 4)},\n")
         print(f"v_neg: {np.round(self.v_neg, 4)},\n")
 
+    def init_data(self, X_labeled_pos, X_labeled_neg, X_unlabeled, **kwargs):
+        self.X_unlabeled = X_unlabeled
+        self.X_labeled_pos = X_labeled_pos
+        self.X_labeled_neg = X_labeled_neg
+        if len(X_labeled_pos.shape) == 1:
+            self.X_labeled_pos = self.X_labeled_pos[...,None]
+        if len(X_labeled_neg.shape) == 1:
+            self.X_labeled_neg = self.X_labeled_neg[...,None]
+        if len(X_unlabeled.shape) == 1:
+            self.X_unlabeled = self.X_unlabeled[...,None]
+        self.n_unlabeled, self.n_features = X_unlabeled.shape
+        self.n_labeled_pos = X_labeled_pos.shape[0]
+        self.n_labeled_neg = X_labeled_neg.shape[0]
+
+        self.n_components_pos = kwargs.get('n_components_pos', 2)
+        self.n_components_neg = kwargs.get('n_components_neg', 2)
+        self.original_scores_unlabeled = kwargs.get("scores_unlabeled", None)
+        if self.original_scores_unlabeled is not None:
+            raise ValueError("Code seems to break when passing scores_unlabeled")
+            self.original_scores_unlabeled = self.original_scores_unlabeled.reshape((-1,1))
+        self.scores_labeled_pos = kwargs.get("scores_labeled_pos", np.ones((self.n_labeled_pos,1))).reshape((-1,1))
+        self.scores_labeled_neg = kwargs.get("scores_labeled_neg", np.zeros((self.n_labeled_neg,1))).reshape((-1,1))
+        self.weighting_scheme = kwargs.get("weighting_scheme", "instance")
+        if self.weighting_scheme not in ["instance", "sample"]:
+            raise ValueError("weighting_scheme must be one of ['instance', 'sample']")
+    
     def fit(self, X_labeled_pos, X_labeled_neg,X_unlabeled,**kwargs):
         """
         Optional Arguments
@@ -143,31 +169,7 @@ class PNU_EM:
         weighting_scheme : str in \{instance, sample}, default='instance'
             whether to weigh each instance or each sample equally in the EM algorithm
         """
-        self.X_unlabeled = X_unlabeled
-        self.X_labeled_pos = X_labeled_pos
-        self.X_labeled_neg = X_labeled_neg
-        if len(X_labeled_pos.shape) == 1:
-            self.X_labeled_pos = self.X_labeled_pos[...,None]
-        if len(X_labeled_neg.shape) == 1:
-            self.X_labeled_neg = self.X_labeled_neg[...,None]
-        if len(X_unlabeled.shape) == 1:
-            self.X_unlabeled = self.X_unlabeled[...,None]
-        self.n_unlabeled, self.n_features = X_unlabeled.shape
-        self.n_labeled_pos = X_labeled_pos.shape[0]
-        self.n_labeled_neg = X_labeled_neg.shape[0]
-
-        self.n_components_pos = kwargs.get('n_components_pos', 2)
-        self.n_components_neg = kwargs.get('n_components_neg', 2)
-        self.original_scores_unlabeled = kwargs.get("scores_unlabeled", None)
-        if self.original_scores_unlabeled is not None:
-            self.original_scores_unlabeled = self.original_scores_unlabeled.reshape((-1,1))
-        self.scores_labeled_pos = kwargs.get("scores_labeled_pos", np.ones((self.n_labeled_pos,1))).reshape((-1,1))
-        self.scores_labeled_neg = kwargs.get("scores_labeled_neg", np.zeros((self.n_labeled_neg,1))).reshape((-1,1))
-        self.weighting_scheme = kwargs.get("weighting_scheme", "instance")
-        if self.weighting_scheme not in ["instance", "sample"]:
-            raise ValueError("weighting_scheme must be one of ['instance', 'sample']")
-        
-
+        self.init_data(X_labeled_pos, X_labeled_neg, X_unlabeled, **kwargs)
         self._initialize_parameters(**kwargs)
 
         self.log_likelihood = -1 * 1e10
@@ -192,12 +194,34 @@ class PNU_EM:
             if not self.step % 10:
                 print(f"Step {self.step} Params\n=========================")
                 self.log_params()
-            if (log_likelihood - self.log_likelihood) / self.log_likelihood < self.tol:
+            if np.abs(log_likelihood - self.log_likelihood) < self.tol:
                 self.converged = True
             self.log_likelihood = log_likelihood
         self.stop_time = time.time()
         logging.info(f"EM algorithm converged after {self.step} steps in {self.stop_time - self.start_time} seconds.")
         self.log_params()
+
+    def get_updated_params(self):
+        omega_plus, omega_minus = self.get_responsibilities(self.X_unlabeled,self.w_pos, self.w_neg,
+                                        score=self.scores_unlabeled)
+        eta_plus, labeled_pos_eta_minus = self.get_responsibilities(self.X_labeled_pos,
+                                                    pos_mixture_weights=self.v_pos,
+                                                    negative_mixture_weights=self.v_neg, score=np.ones((self.n_labeled_pos,1)))
+        labeled_neg_eta_plus, eta_minus = self.get_responsibilities(self.X_labeled_neg,
+                                                    pos_mixture_weights=self.v_pos,
+                                                    negative_mixture_weights=self.v_neg, score=np.zeros((self.n_labeled_neg,1)))
+        new_alpha = self.get_updated_alpha(omega_plus=omega_plus)
+        new_w_pos, new_w_neg = self.get_updated_w(omega_plus=omega_plus, omega_minus=omega_minus)
+        new_v_pos, new_v_neg = self.get_updated_v(eta_plus=eta_plus, eta_minus=eta_minus)
+        new_mu_pos, new_mu_neg = self.get_updated_mean(omega_plus=omega_plus, omega_minus=omega_minus,
+                                                        eta_plus=eta_plus, positive_eta_minus=labeled_pos_eta_minus,
+                                                        negative_eta_plus=labeled_neg_eta_plus, eta_minus=eta_minus)
+        new_cov_pos, new_cov_neg = self.get_updated_cov(omega_plus=omega_plus, omega_minus=omega_minus,
+                                                        eta_plus=eta_plus, positive_eta_minus=labeled_pos_eta_minus,
+                                                        negative_eta_plus=labeled_neg_eta_plus, eta_minus=eta_minus)
+        new_params = dict(alpha=new_alpha, mu_pos=new_mu_pos, cov_pos=new_cov_pos, w_pos=new_w_pos, v_pos=new_v_pos,
+                            mu_neg=new_mu_neg, cov_neg=new_cov_neg, w_neg=new_w_neg, v_neg=new_v_neg)
+        return new_params
 
     def get_component_pdf(self,X, mu, cov):
         """Calculate the probability density function of the multivariate normal distribution
@@ -210,7 +234,11 @@ class PNU_EM:
         assert pdf.shape == (n, k)
         return pdf
 
-    def get_responsibilities(self, X, pos_mixture_weight, negative_mixture_weights, score=None):
+    def get_responsibilities(self, X, pos_mixture_weights, negative_mixture_weights, score=None):
+        assert np.allclose(pos_mixture_weights.sum(),1,rtol=0,atol=1e-2),\
+            f"trying to calculate responsibilities with non-normalized positive mixture weights, {pos_mixture_weights}, sum: {pos_mixture_weights.sum():.3f}"
+        assert np.allclose(negative_mixture_weights.sum(),1,rtol=0,atol=1e-2),\
+            f"trying to calculate responsibilities with non-normalized negative mixture weights, {negative_mixture_weights}, sum: {negative_mixture_weights.sum():.3f}"
         """Calculate the responsibilities of each component for each point in X."""
         n = X.shape[0]
         if score is None:
@@ -223,24 +251,41 @@ class PNU_EM:
 
         for i in range(n):
             for k in range(self.n_components_pos):
-                positive_responsibilities[i,k] = score[i] * component_pdfs_pos[i,k] * pos_mixture_weight[k]
+                positive_responsibilities[i,k] = score[i] * component_pdfs_pos[i,k] * pos_mixture_weights[k]
             for k in range(self.n_components_neg):
                 negative_responsibilities[i,k] = (1 - score[i]) * component_pdfs_neg[i,k] * negative_mixture_weights[k]
             norm_i = positive_responsibilities[i].sum() + negative_responsibilities[i].sum()
             positive_responsibilities[i] /= norm_i
             negative_responsibilities[i] /= norm_i
+        assert np.allclose(positive_responsibilities.sum(1) + negative_responsibilities.sum(1), 1,rtol=0,atol=1e-2), \
+            f"responsibilities do not sum to 1, sum: {positive_responsibilities.sum(1)+ negative_responsibilities.sum(1):.3f}"
         return positive_responsibilities, negative_responsibilities
 
     def get_updated_alpha(self, omega_plus):
-        return (np.sum(self.weights_unlabeled * omega_plus)) / self.weights_unlabeled.sum()
+        a = (np.sum(self.weights_unlabeled * omega_plus)) / self.weights_unlabeled.sum()
+        assert 0 <= a <= 1, f"alpha is not between 0 and 1: {a}"
+        return a
 
     def get_updated_w(self, omega_plus, omega_minus):
-        w_plus = (omega_plus.T @ (self.scores_unlabeled * self.weights_unlabeled)) / (self.alpha * (self.scores_unlabeled * self.weights_unlabeled).sum())
-        w_minus = (omega_minus.T @ ((1 - self.scores_unlabeled) * self.weights_unlabeled)) / ((1 - self.alpha) * ((1 - self.scores_unlabeled) * self.weights_unlabeled).sum())
+        alphaHat = omega_plus.sum() / (omega_plus.sum() + omega_minus.sum())
+        w_plus = (omega_plus.T @ (self.scores_unlabeled * self.weights_unlabeled)) / \
+                    (alphaHat * (self.scores_unlabeled * self.weights_unlabeled).sum())
+        w_minus = (omega_minus.T @ ((1 - self.scores_unlabeled) * self.weights_unlabeled)) / \
+                        ((1 - alphaHat) * ((1 - self.scores_unlabeled) * self.weights_unlabeled).sum())
+        assert np.allclose(w_plus.sum(), 1,rtol=0,atol=1e-2), f"unlabeled positive mixture weights do not sum to 1: {w_plus}, sum: {w_plus.sum():.3f}"
+        assert np.allclose(w_minus.sum(), 1,rtol=0,atol=1e-2), f"unlabeled negative mixture weights do not sum to 1: {w_minus}, sum: {w_minus.sum():.3f}"
         return w_plus, w_minus
     
     def get_updated_v(self, eta_plus, eta_minus):
-        return eta_plus.T @ (self.scores_labeled_pos * self.weights_pos) / (self.scores_labeled_pos * self.weights_pos).sum(), eta_minus.T @ ((1 - self.scores_labeled_neg) * self.weights_neg) / ((1 - self.scores_labeled_neg) * self.weights_neg).sum()
+        v_plus = eta_plus.T @ (self.scores_labeled_pos * self.weights_pos) / \
+            (self.scores_labeled_pos * self.weights_pos).sum()
+
+        v_minus = eta_minus.T @ ((1 - self.scores_labeled_neg) * self.weights_neg) / \
+                        ((1 - self.scores_labeled_neg) * self.weights_neg).sum()
+        assert np.allclose(v_plus.sum(), 1,rtol=0,atol=1e-2), f"labeled positive mixture weights do not sum to 1: {v_plus}, sum: {v_plus.sum():.3f}"
+        assert np.allclose(v_minus.sum(), 1,rtol=0,atol=1e-2), f"labeled negative mixture weights do not sum to 1: {v_minus}, sum: {v_minus.sum():.3f}"
+
+        return v_plus, v_minus
 
     def get_updated_mean(self, omega_plus, omega_minus, eta_plus, positive_eta_minus, negative_eta_plus, eta_minus):
         mu_plus = np.zeros((self.n_components_pos, self.n_features))
@@ -304,29 +349,6 @@ class PNU_EM:
             cov_minus[k] = num / den
 
         return cov_plus, cov_minus
-
-    def get_updated_params(self):
-        omega_plus, omega_minus = self.get_responsibilities(self.X_unlabeled,self.w_pos, self.w_neg)
-        eta_plus, labeled_pos_eta_minus = self.get_responsibilities(self.X_labeled_pos,
-                                                    score=self.scores_labeled_pos,
-                                                    pos_mixture_weight=self.v_pos,
-                                                    negative_mixture_weights=self.v_neg)
-        labeled_neg_eta_plus, eta_minus = self.get_responsibilities(self.X_labeled_neg,
-                                                    score=self.scores_labeled_neg,
-                                                    pos_mixture_weight=self.v_pos,
-                                                    negative_mixture_weights=self.v_neg)
-        new_alpha = self.get_updated_alpha(omega_plus=omega_plus)
-        new_w_pos, new_w_neg = self.get_updated_w(omega_plus=omega_plus, omega_minus=omega_minus)
-        new_v_pos, new_v_neg = self.get_updated_v(eta_plus=eta_plus, eta_minus=eta_minus)
-        new_mu_pos, new_mu_neg = self.get_updated_mean(omega_plus=omega_plus, omega_minus=omega_minus,
-                                                        eta_plus=eta_plus, positive_eta_minus=labeled_pos_eta_minus,
-                                                        negative_eta_plus=labeled_neg_eta_plus, eta_minus=eta_minus)
-        new_cov_pos, new_cov_neg = self.get_updated_cov(omega_plus=omega_plus, omega_minus=omega_minus,
-                                                        eta_plus=eta_plus, positive_eta_minus=labeled_pos_eta_minus,
-                                                        negative_eta_plus=labeled_neg_eta_plus, eta_minus=eta_minus)
-        new_params = dict(alpha=new_alpha, mu_pos=new_mu_pos, cov_pos=new_cov_pos, w_pos=new_w_pos, v_pos=new_v_pos,
-                            mu_neg=new_mu_neg, cov_neg=new_cov_neg, w_neg=new_w_neg, v_neg=new_v_neg)
-        return new_params
 
     def get_log_likelihood(self,):
         labeled_pos_log_likelihood = np.log(self.get_component_pdf(self.X_labeled_pos, self.mu_pos, self.cov_pos).sum(1)).sum()
