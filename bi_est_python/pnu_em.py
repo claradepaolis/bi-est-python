@@ -13,7 +13,7 @@ class PNU_EM:
         """
         Optional Arguments
         ------------------
-        tol : float, default=1e-11
+        tol : float, default=1e-5
             Tolerance for stopping criterion.
 
         max_steps : int, default=2000
@@ -23,7 +23,7 @@ class PNU_EM:
             Random seed for initializing the algorithm.
 
         """
-        self.tol = kwargs.get('tol',1e-11)
+        self.tol = kwargs.get('tol',1e-5)
         self.max_steps = kwargs.get('max_steps', 2000)
         self.rnd_state = kwargs.get('rnd_state', 0)
 
@@ -194,7 +194,7 @@ class PNU_EM:
             if not self.step % 10:
                 print(f"Step {self.step} Params\n=========================")
                 self.log_params()
-            if np.abs(log_likelihood - self.log_likelihood) < self.tol:
+            if (log_likelihood - self.log_likelihood) < self.tol:
                 self.converged = True
             self.log_likelihood = log_likelihood
         self.stop_time = time.time()
