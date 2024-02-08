@@ -2,7 +2,7 @@ import scipy
 import numpy as np
 from scipy.stats import multivariate_normal
 from scipy.stats import norm 
-import pnuem.mixtureUtils
+import pnuem.mixtureUtils as mixtureUtils
 
 class NMixture:
     """
