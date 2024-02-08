@@ -1,4 +1,3 @@
-import scipy
 import numpy as np
 from sklearn import metrics
 from scipy.special import rel_entr

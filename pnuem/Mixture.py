@@ -2,7 +2,7 @@ import scipy
 import numpy as np
 from scipy.stats import multivariate_normal
 from scipy.stats import norm 
-import mixtureUtils
+import pnuem.mixtureUtils
 
 class NMixture:
     """
@@ -50,7 +50,7 @@ class NMixture:
         """sample N points from mixture distribution"""
     
         if self.num_comps == 1:
-            points = self.density.rvs(N)
+            points = self.density[0].rvs(N)
         else:
             Nk = np.round(N * self.ps).astype(int)
             points = []
