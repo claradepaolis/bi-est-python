@@ -350,12 +350,27 @@ class PNU_EM:
 
         return cov_plus, cov_minus
 
-    def get_log_likelihood(self,):
-        labeled_pos_log_likelihood = np.log(self.get_component_pdf(self.X_labeled_pos, self.mu_pos, self.cov_pos).sum(1)).sum()
-        labeled_neg_log_likelihood = np.log(self.get_component_pdf(self.X_labeled_neg, self.mu_neg, self.cov_neg).sum(1)).sum()
-        unlabeled_pos_likelihoods = self.get_component_pdf(self.X_unlabeled, self.mu_pos, self.cov_pos).sum(1)
-        unlabeled_neg_likelihoods = self.get_component_pdf(self.X_unlabeled, self.mu_neg, self.cov_neg).sum(1)
-        unlabeled_log_likelihood = np.log(self.alpha * unlabeled_pos_likelihoods + (1 - self.alpha) * unlabeled_neg_likelihoods).sum()
+    def get_log_likelihood(self,XPos=None,XNeg=None,XUnlabeled=None):
+        if XPos is None:
+            XPos = self.X_labeled_pos
+        if XNeg is None:
+            XNeg = self.X_labeled_neg
+        if XUnlabeled is None:
+            XUnlabeled = self.X_unlabeled
+        if len(XPos):
+            labeled_pos_log_likelihood = np.log(self.get_component_pdf(XPos, self.mu_pos, self.cov_pos).sum(1)).sum()
+        else:
+            labeled_pos_log_likelihood = 0
+        if len(XNeg):
+            labeled_neg_log_likelihood = np.log(self.get_component_pdf(XNeg, self.mu_neg, self.cov_neg).sum(1)).sum()
+        else:
+            labeled_neg_log_likelihood = 0
+        if len(XUnlabeled):
+            unlabeled_pos_likelihoods = self.get_component_pdf(self.X_unlabeled, self.mu_pos, self.cov_pos).sum(1)
+            unlabeled_neg_likelihoods = self.get_component_pdf(self.X_unlabeled, self.mu_neg, self.cov_neg).sum(1)
+            unlabeled_log_likelihood = np.log(self.alpha * unlabeled_pos_likelihoods + (1 - self.alpha) * unlabeled_neg_likelihoods).sum()
+        else:
+            unlabeled_log_likelihood = 0
 
         return labeled_pos_log_likelihood + labeled_neg_log_likelihood + unlabeled_log_likelihood
 
